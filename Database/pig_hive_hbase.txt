@@ -1,0 +1,137 @@
+#####################################
+# Pig
+#####################################
+
+-- load data from source files
+p1 = LOAD 'poems/input/Poem1.txt' USING TextLoader AS(line:Chararray);
+p2 = LOAD 'poems/input/Poem2.txt' USING TextLoader AS(line:Chararray);
+p3 = LOAD 'poems/input/Poem3.txt' USING TextLoader AS(line:Chararray);
+p4 = LOAD 'poems/input/Poem4.txt' USING TextLoader AS(line:Chararray);
+p5 = LOAD 'poems/input/Poem5.txt' USING TextLoader AS(line:Chararray);
+p6 = LOAD 'poems/input/Poem6.txt' USING TextLoader AS(line:Chararray);
+p = UNION p1, p2, p3, p4, p5, p6;
+
+-- process data: tokenize, generate word sizes, group, concatenate result string
+words = foreach p generate flatten(TOKENIZE(line , ' ,!?.-\t\n\r\f\\')) as word;
+lengths = FOREACH words GENERATE (Chararray)SIZE(word) AS ln;
+lengths_unique = GROUP lengths BY ln;
+lengths_with_count = FOREACH lengths_unique GENERATE CONCAT('Length ', group, ': ', (Chararray)COUNT(lengths)) as cnt;
+
+-- store results
+store lengths_with_count into 'poems/output/lengthcount';
+
+
+#####################################
+# Hive
+#####################################
+  /*
+		
+	Description of sales table:
+		orderdate               timestamp
+		orderquantity           int
+		orderdiscount           float
+		unitprice               float
+		unitcost                float
+		shippingcost            float
+		province                varchar(20)
+		customertype            varchar(20)
+		shipdate                timestamp
+	
+  */
+
+
+-- a_query.q
+SELECT orderdate, province 
+FROM week12.sales
+WHERE province = 'Manitoba' 
+AND year(orderdate) >= 2012
+ORDER BY orderdate;
+
+
+-- b_query.q
+SELECT province, COUNT(province) as counter
+FROM week12.sales
+WHERE customertype = 'Corporate'
+AND year(orderdate) = 2011
+OR year(orderdate) = 2012 
+GROUP BY province
+ORDER BY counter DESC;
+
+
+-- c_query.q
+SELECT sum(orderquantity*unitcost) as amount, customertype
+FROM week12.sales
+WHERE province = 'Saskachewan'
+AND year(orderdate) = 2010
+GROUP BY customertype
+ORDER BY amount DESC;
+
+
+-- d_query.q
+SELECT province, customertype, count(customertype) as counter
+FROM week12.sales
+WHERE year(orderdate) = 2011
+AND customertype != 'Consumer'
+GROUP BY province, customertype
+ORDER BY province, counter DESC;
+
+
+-- e_query_query.q
+SELECT orderdate, province, orderquantity*unitcost as price
+FROM week12.sales
+WHERE month(orderdate) > 7
+AND orderquantity*unitcost > 10000
+AND province = 'Quebec'
+
+UNION
+
+SELECT orderdate, province, orderquantity*unitcost as price
+FROM week12.sales
+WHERE month(orderdate) > 7
+AND orderquantity*unitcost > 10000
+AND province = 'Yukon'
+
+UNION
+
+SELECT orderdate, province, orderquantity*unitcost as price
+FROM week12.sales
+WHERE month(orderdate) > 7
+AND orderquantity*unitcost > 10000
+AND province = 'Alberta';
+
+
+-- f_query.q
+SELECT province, datediff(shipdate, orderdate), count(datediff(shipdate, orderdate))
+FROM week12.sales
+WHERE datediff(shipdate, orderdate) >=5
+AND province = 'British Columbia'
+AND customertype = 'Small Business'
+GROUP BY province, datediff(shipdate, orderdate)
+
+UNION
+
+SELECT province, datediff(shipdate, orderdate), count(datediff(shipdate, orderdate))
+FROM week12.sales
+WHERE datediff(shipdate, orderdate) >=5
+AND province = 'Manitoba'
+AND customertype = 'Small Business'
+GROUP BY province, datediff(shipdate, orderdate);
+
+
+
+#####################################
+# HBase
+#####################################
+query 1:
+scan 'salesdata', {COLUMNS => 'sales:unitprice', FILTER => "SingleColumnValueFilter('sales', 'unitprice', >, 'binary:41')"}
+query 2:
+scan 'salesdata', {COLUMNS => ['metadata:province', 'metadata:shipdate'], FILTER => "SingleColumnValueFilter('metadata', 'province', =, 'binary:Ontario')"}
+query 3:
+scan 'salesdata', { COLUMNS => 'metadata:customertype', FILTER => "SingleColumnValueFilter('metadata', 'customertype',=,'binary:Small Business')" }
+query 4:
+scan 'salesdata', { COLUMNS => 'sales:discount', FILTER => "SingleColumnValueFilter('sales', 'discount',=,'binary:0.01')" }
+query 5:
+scan 'salesdata', { COLUMNS => ['metadata:orderdate','metadata:province'], LIMIT => 3, FILTER => "ValueFilter(=,'binary:Northwest Territories')" }
+query 6:
+scan 'salesdata', { COLUMNS => ['metadata:orderdate','metadata:province'], FILTER => "SingleColumnValueFilter('metadata', 'orderdate',>,'binary:2012')" }
+
